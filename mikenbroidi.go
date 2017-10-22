@@ -4,18 +4,20 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/nlopes/slack"
 	strava "github.com/strava/go.strava"
 )
 
 // Club id.
-var stravaClubID int64 = 231903
+var stravaClubID int64
 var stravaAccessToken string
 var stravaClient *strava.Client
 var clubService *strava.ClubsService
 
-var lastTimestamp = 0
+var lastTimestamp time.Time
 
 var slackToken string
 var slackChannel string
@@ -47,13 +49,29 @@ func main() {
 	// Start watching for new Strava activities.
 	for true {
 
+		fmt.Println("Get new rides.")
+
 		// Get new rides.
-		// newRides := getNewRides(&lastTimestamp)
+		newActivities := getNewActivities()
+		// newActivities = getNewActivities()
+
+		// List 'em all!
+		for _, activity := range newActivities {
+			print(activity.Name + "\n")
+			fmt.Println(activity.StartDateLocal)
+			postToSlack(activity)
+		}
+
+		time.Sleep(60000 * time.Millisecond)
+
 	}
 
 }
 
-func getNewRides(lastTimestamp *int) []*strava.ActivitySummary {
+func getNewActivities() []strava.ActivitySummary {
+
+	var newLastTimestamp time.Time
+	activityLimit := 10
 
 	// Create clubs service.
 	clubService := strava.NewClubsService(stravaClient)
@@ -61,38 +79,64 @@ func getNewRides(lastTimestamp *int) []*strava.ActivitySummary {
 	// Get club activities.
 	activities, err := clubService.ListActivities(stravaClubID).
 		Page(1).
-		PerPage(10).
+		PerPage(activityLimit).
 		Do()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	// List 'em all!
-	for _, v := range activities {
-		print(v.Name + "\n")
+	// Get the timestamp of the first.
+	if len(activities) > 0 {
+		newLastTimestamp = activities[0].StartDateLocal
 	}
 
-	// print(len(activities))
+	// First time this function is called. Just save the latest timestamp and quit.
+	if lastTimestamp.IsZero() {
+		lastTimestamp = newLastTimestamp
+		return []strava.ActivitySummary{}
+	}
 
-	fmt.Printf("\n\n\n")
+	// Pick activities newer than given timestamp.
+	newActivities := make([]strava.ActivitySummary, 0)
+	i := 0
+	for _, activity := range activities {
+		if activity.StartDateLocal.After(lastTimestamp) {
+			fmt.Println("new activity")
+			newActivities = append(newActivities, *activity)
+			i++
+		}
+	}
 
-	return activities
+	// Grab timestamp.
+	lastTimestamp = newLastTimestamp
+
+	return newActivities
 
 }
 
 func postToSlack(activity strava.ActivitySummary) {
 
-	// New Slack client.
-
+	// Setup message parameters.
 	params := slack.PostMessageParameters{}
-	params.Username = "mikenbroidi"
-	params.IconEmoji = "dog"
-	channelID, timestamp, err := slackClient.PostMessage("C7N5FQP7X", "Some text2", params)
+	params.Username = slackUsername
+	params.IconEmoji = slackIcon
+
+	// Generate message.
+	message := fmt.Sprintf(
+		"%s just finished a %d km %s. Check it out: https://www.strava.com/activities/%d",
+		activity.Athlete.FirstName,
+		int(activity.Distance/1000),
+		strings.ToLower(fmt.Sprintf("%s", activity.Type)),
+		activity.Id)
+
+	// Send message.
+	_, _, err := slackClient.PostMessage(slackChannel, message, params)
+
 	if err != nil {
 		fmt.Printf("%s\n", err)
-		os.Exit(1)
+	} else {
+		fmt.Printf(message)
 	}
-	fmt.Printf("Message successfully sent to channel %s at %s", channelID, timestamp)
 
 }

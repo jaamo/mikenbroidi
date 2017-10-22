@@ -1,0 +1,35 @@
+#!/bin/bash
+
+unset STRAVA_CLUBID
+unset STRAVA_ACCESS_TOKEN
+unset SLACK_ACCESS_TOKEN
+unset SLACK_CHANNEL
+unset SLACK_USERNAME
+unset SLACK_ICON
+
+echo "Strava club id:"
+read STRAVA_CLUBID
+
+echo "Strava access token:"
+read STRAVA_ACCESS_TOKEN
+
+echo "Slack access token:"
+read SLACK_ACCESS_TOKEN
+
+echo "Slack channel:"
+read SLACK_CHANNEL
+
+echo "Slack username:"
+read SLACK_USERNAME
+
+echo "Slack icon:"
+read SLACK_ICON
+
+
+export STRAVA_CLUBID=$STRAVA_CLUBID
+export STRAVA_ACCESS_TOKEN=$STRAVA_ACCESS_TOKEN
+export SLACK_ACCESS_TOKEN=$SLACK_ACCESS_TOKEN
+export SLACK_CHANNEL=$SLACK_CHANNEL
+export SLACK_USERNAME=$SLACK_USERNAME
+export SLACK_ICON=$SLACK_ICON
+
