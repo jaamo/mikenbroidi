@@ -11,73 +11,80 @@ import (
 	strava "github.com/strava/go.strava"
 )
 
-// Club id.
-var stravaClubID int64
-var stravaAccessToken string
-var stravaClient *strava.Client
-var clubService *strava.ClubsService
+type stravaStruct struct {
+	clubID      int64
+	accessToken string
+	client      *strava.Client
+	clubService *strava.ClubsService
+}
 
-var lastTimestamp time.Time
-
-var slackToken string
-var slackChannel string
-var slackUsername string
-var slackIcon string
-var slackClient *slack.Client
+type slackStruct struct {
+	token    string
+	channel  string
+	username string
+	icon     string
+	client   *slack.Client
+}
 
 func main() {
 
+	var lastTimestamp time.Time
+	var strv stravaStruct
+	var slck slackStruct
+
 	// Read settings from environment variables.
-	stravaClubID, _ = strconv.ParseInt(os.Getenv("STRAVA_CLUBID"), 10, 32)
-	stravaAccessToken = os.Getenv("STRAVA_ACCESS_TOKEN")
-	slackToken = os.Getenv("SLACK_ACCESS_TOKEN")
-	slackChannel = os.Getenv("SLACK_CHANNEL")
-	slackUsername = os.Getenv("SLACK_USERNAME")
-	slackIcon = os.Getenv("SLACK_ICON")
+	strv.clubID, _ = strconv.ParseInt(os.Getenv("STRAVA_CLUBID"), 10, 32)
+	strv.accessToken = os.Getenv("STRAVA_ACCESS_TOKEN")
+	slck.token = os.Getenv("SLACK_ACCESS_TOKEN")
+	slck.channel = os.Getenv("SLACK_CHANNEL")
+	slck.username = os.Getenv("SLACK_USERNAME")
+	slck.icon = os.Getenv("SLACK_ICON")
 
 	// Check that variables exists.
-	if stravaClubID == 0 || len(stravaAccessToken) == 0 || len(slackToken) == 0 || len(slackChannel) == 0 || len(slackUsername) == 0 || len(slackIcon) == 0 {
+	if strv.clubID == 0 || len(strv.accessToken) == 0 || len(slck.token) == 0 || len(slck.channel) == 0 || len(slck.username) == 0 || len(slck.icon) == 0 {
 		fmt.Println("Please define following environment variables: STRAVA_CLUBID, STRAVA_ACCESS_TOKEN, SLACK_ACCESS_TOKEN, SLACK_CHANNEL, SLACK_USERNAME, SLACK_ICON")
 	}
 
 	// Create Strava client.
-	stravaClient = strava.NewClient(stravaAccessToken)
+	strv.client = strava.NewClient(strv.accessToken)
 
 	// Create slack client.
-	slackClient = slack.New(slackToken)
+	slck.client = slack.New(slck.token)
+
+	// for making things recurring
+	ticker := time.NewTicker(time.Duration(60000) * time.Millisecond)
 
 	// Start watching for new Strava activities.
-	for true {
+	for {
 
 		fmt.Println("Get new rides.")
 
 		// Get new rides.
-		newActivities := getNewActivities()
-		// newActivities = getNewActivities()
+		newActivities := getNewActivities(strv, &lastTimestamp)
 
 		// List 'em all!
 		for _, activity := range newActivities {
 			print(activity.Name + "\n")
 			fmt.Println(activity.StartDateLocal)
-			postToSlack(activity)
+			postToSlack(slck, activity)
 		}
 
-		time.Sleep(60000 * time.Millisecond)
+		<-ticker.C
 
 	}
 
 }
 
-func getNewActivities() []strava.ActivitySummary {
+func getNewActivities(strv stravaStruct, lastTimestamp *time.Time) (newActivities []strava.ActivitySummary) {
 
 	var newLastTimestamp time.Time
 	activityLimit := 10
 
 	// Create clubs service.
-	clubService := strava.NewClubsService(stravaClient)
+	clubService := strava.NewClubsService(strv.client)
 
 	// Get club activities.
-	activities, err := clubService.ListActivities(stravaClubID).
+	activities, err := clubService.ListActivities(strv.clubID).
 		Page(1).
 		PerPage(activityLimit).
 		Do()
@@ -93,15 +100,15 @@ func getNewActivities() []strava.ActivitySummary {
 
 	// First time this function is called. Just save the latest timestamp and quit.
 	if lastTimestamp.IsZero() {
-		lastTimestamp = newLastTimestamp
-		return []strava.ActivitySummary{}
+		*lastTimestamp = newLastTimestamp
+		return nil
 	}
 
 	// Pick activities newer than given timestamp.
-	newActivities := make([]strava.ActivitySummary, 0)
+	newActivities = make([]strava.ActivitySummary, 0)
 	i := 0
 	for _, activity := range activities {
-		if activity.StartDateLocal.After(lastTimestamp) {
+		if activity.StartDateLocal.After(*lastTimestamp) {
 			fmt.Println("new activity")
 			newActivities = append(newActivities, *activity)
 			i++
@@ -109,18 +116,18 @@ func getNewActivities() []strava.ActivitySummary {
 	}
 
 	// Grab timestamp.
-	lastTimestamp = newLastTimestamp
+	*lastTimestamp = newLastTimestamp
 
-	return newActivities
+	return
 
 }
 
-func postToSlack(activity strava.ActivitySummary) {
+func postToSlack(slck slackStruct, activity strava.ActivitySummary) {
 
 	// Setup message parameters.
 	params := slack.PostMessageParameters{}
-	params.Username = slackUsername
-	params.IconEmoji = slackIcon
+	params.Username = slck.username
+	params.IconEmoji = slck.icon
 
 	// Generate message.
 	message := fmt.Sprintf(
@@ -131,7 +138,7 @@ func postToSlack(activity strava.ActivitySummary) {
 		activity.Id)
 
 	// Send message.
-	_, _, err := slackClient.PostMessage(slackChannel, message, params)
+	_, _, err := slck.client.PostMessage(slck.channel, message, params)
 
 	if err != nil {
 		fmt.Printf("%s\n", err)
