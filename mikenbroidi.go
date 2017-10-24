@@ -101,7 +101,7 @@ func getNewActivities(strv stravaStruct, lastTimestamp *time.Time) (newActivitie
 	// First time this function is called. Just save the latest timestamp and quit.
 	if lastTimestamp.IsZero() {
 		*lastTimestamp = newLastTimestamp
-		return nil
+		return []strava.ActivitySummary{}
 	}
 
 	// Pick activities newer than given timestamp.
